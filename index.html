@@ -30,7 +30,8 @@ button{background:var(--pn);color:var(--fg);border:1px solid #333;border-radius:
 </style></head><body>
 <div id="app">
  <div id="stage"><canvas id="view"></canvas><div id="info">Iniciando…</div><div id="tm">● 00:00</div><div id="msg"></div></div>
- <div id="modes"><button id="mPhoto" class="on">Foto</button><button id="mVideo">Video</button></div>
+ <div id="modes"><button id="mPhoto" class="on">Foto</button><button id="mVideo">Video</button><button id="natBtn">Cámara HD</button><label style="align-self:center"><input type="checkbox" id="enh" checked> Mejorar</label>
+ <input id="nin" type="file" accept="image/*" capture="environment" hidden><input id="vin" type="file" accept="video/*" capture="environment" hidden></div>
  <div id="bar"><img id="thumb" alt=""><button id="shot" aria-label="Disparador"></button><button id="flip">Girar cámara</button></div>
 </div>
 <div id="modal">
@@ -194,10 +195,28 @@ async function share(){const f=mkFile();
 
 function setMode(m){if(recording())return;mode=m;$('mPhoto').classList.toggle('on',m==='photo');$('mVideo').classList.toggle('on',m==='video');$('shot').classList.toggle('vid',m==='video')}
 $('mPhoto').onclick=()=>setMode('photo');$('mVideo').onclick=()=>setMode('video');
-$('shot').onclick=()=>{if(mode==='photo')snap();else recording()?recStop():recStart()};
+$('shot').onclick=()=>{if(mode==='photo')ic?snap():$('nin').click();else recording()?recStop():recStart()};
 $('flip').onclick=()=>{if(recording())return;face=face==='environment'?'user':'environment';start()};
 $('discard').onclick=()=>{$('pv').pause();$('modal').style.display='none';resume()};
 $('dl').onclick=download;$('share').onclick=share;
 $('thumb').onclick=()=>{cur&&openModal()};
+// Cámara nativa (iPhone/Safari): foto y video con la calidad completa de la app Cámara, luego mejora opcional
+$('natBtn').onclick=()=>$(mode==='video'?'vin':'nin').click();
+$('nin').onchange=async e=>{const f=e.target.files[0];e.target.value='';if(!f)return;
+ try{
+  if(!$('enh').checked){setCur(f,f.type||'image/jpeg','jpg',`${(f.size/1048576).toFixed(1)} MB · original`)}
+  else{
+   const im=new Image();im.src=URL.createObjectURL(f);await im.decode();
+   const w=im.naturalWidth,h=im.naturalHeight,T=analyze(im);T.ex=cl(T.ex,.9,1.3);T.dn=Math.min(T.dn,.04);
+   const s=Math.min(1,photo.max/Math.max(w,h)),W=Math.round(w*s),H=Math.round(h*s);
+   photo.draw(im,w,h,W,H,{...T,rs:Math.max(1,w/1280)});
+   const blob=await new Promise(r=>photo.cv.toBlob(r,'image/jpeg',.95));photo.cv.width=photo.cv.height=1;URL.revokeObjectURL(im.src);
+   if(!blob)throw new Error('No se pudo procesar la foto');
+   setCur(blob,'image/jpeg','jpg',`${W}×${H} px · ${(blob.size/1048576).toFixed(1)} MB`)}
+  $('thumb').src=cur.url;
+ }catch(err){alert('Error: '+err.message)}
+ resume()};
+$('vin').onchange=e=>{const f=e.target.files[0];e.target.value='';if(!f)return;
+ setCur(f,f.type||'video/quicktime',(f.name.split('.').pop()||'mov').toLowerCase(),`${(f.size/1048576).toFixed(1)} MB · original de la cámara`);resume()};
 start();loop();
 </script></body></html>
