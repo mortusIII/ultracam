@@ -40,7 +40,7 @@ button{background:var(--pn);color:var(--fg);border:1px solid #333;border-radius:
  <div id="cmp"><img id="prev" alt="Después"><img id="bf" alt="Antes"><input id="cs" type="range" min="0" max="100" value="50"></div><video id="pv" controls playsinline style="display:none"></video>
  <div id="ctl" class="row" style="display:none"><select id="sty"><option value="natural">Natural</option><option value="calido">Cálido</option><option value="cine">Cine</option></select>
  <label>Exp <input type="range" id="rExp" min="-1" max="1" step=".05" value="0"></label><label>Sombras <input type="range" id="rSh" min="-.2" max=".4" step=".02" value="0"></label><label>Temp <input type="range" id="rTp" min="-.1" max=".1" step=".01" value="0"></label>
- <select id="lim"><option value="0">Original</option><option value="1920">1080p</option></select><button id="rep">Informe</button></div>
+ <select id="lim"><option value="0">Original</option><option value="1920">1080p</option></select><button id="rot">Girar</button><button id="rep">Informe</button></div>
  <div id="meta"></div><div id="toast"></div>
  <div class="row"><button id="discard">Cerrar</button><button id="dl">Descargar</button><button id="share" class="pri">Guardar en galería</button></div>
 </div>
@@ -95,6 +95,8 @@ void main(){
   vec3 q=T(float(i),float(j),1.);vec3 d=q-c;
   float w=exp(-dot(d,d)/s2)/(1.+.35*float(i*i+j*j));a+=q*w;ws+=w;}
  vec3 o=a/ws;
+ vec3 ca=c-L(c);for(int k=0;k<8;k++){float f=float(k)*.7854;vec3 q=texture2D(t,uv+vec2(cos(f),sin(f))*px*3.).rgb;ca+=q-L(q);}
+ o=vec3(L(o))+ca/9.;
  vec3 g=(T(-1.,0.,rs)+T(1.,0.,rs)+T(0.,-1.,rs)+T(0.,1.,rs))*.15+o*.4;
  vec3 g2=(T(-1.,0.,3.*rs)+T(1.,0.,3.*rs)+T(0.,-1.,3.*rs)+T(0.,1.,3.*rs))*.15+o*.4;
  float de=clamp(L(o)-L(g),-.1,.1),d2=clamp(L(o)-L(g2),-.15,.15);
@@ -259,7 +261,7 @@ const ST={natural:{ct:0,sa:0,t:0},calido:{ct:.05,sa:.1,t:.06},cine:{ct:.18,sa:-.
 const ed={src:null,nat:false,exp:0,sh:0,tp:0,style:'natural',lim:0,before:null};
 function toCanvas(src,w,h){const c=document.createElement('canvas'),k=Math.min(1,4096/Math.max(w,h));c.width=Math.round(w*k);c.height=Math.round(h*k);c.getContext('2d').drawImage(src,0,0,c.width,c.height);return c}
 async function develop(){
- const c=ed.src,T=analyze(c),S=ST[ed.style];if(ed.nat){T.ex=cl(T.ex,.9,1.3);T.dn=Math.min(T.dn,.04)}
+ const c=ed.src,T=analyze(c),S=ST[ed.style];if(ed.nat){T.ex=cl(T.ex,.9,1.3);T.dn=Math.min(T.dn,.04);T.sh=Math.min(T.sh,.5);T.lc=.25}
  const k=ed.lim?Math.min(1,ed.lim/Math.max(c.width,c.height)):1,W=Math.round(c.width*k),H=Math.round(c.height*k),tp=ed.tp+S.t;
  photo.draw(c,c.width,c.height,W,H,{...T,ex:T.ex*Math.pow(2,ed.exp),sl:cl(T.sl+ed.sh,0,.6),ct:cl(T.ct+S.ct,0,.5),sa:T.sa+S.sa,wb:[T.wb[0]*(1+tp),T.wb[1],T.wb[2]*(1-tp)],rs:Math.max(1,c.width/1280)});
  const blob=await new Promise(r=>photo.cv.toBlob(r,'image/jpeg',.95));photo.cv.width=photo.cv.height=1;if(!blob)throw new Error('No se pudo procesar');
@@ -278,6 +280,8 @@ function qm(src){const sw=src.width||src.naturalWidth,sh=src.height||src.natural
  ls.sort((a,b)=>a-b);return{br:Math.round(m/w/h/2.55),sh:Math.round(Math.sqrt(v/ls.length)),nz:+(ls[ls.length>>1]*1.48).toFixed(1)}}
 $('rep').onclick=async()=>{const a=qm(ed.src),b=qm(await createImageBitmap(cur.blob));
  $('toast').textContent=`Antes→Después · Brillo ${a.br}%→${b.br}% · Nitidez ${a.sh}→${b.sh} · Ruido est. ${a.nz}→${b.nz}`};
+$('rot').onclick=async()=>{const c=ed.src,r=document.createElement('canvas');r.width=c.height;r.height=c.width;const x=r.getContext('2d');x.translate(r.width,0);x.rotate(Math.PI/2);x.drawImage(c,0,0);
+ ed.src=r;ed.before&&URL.revokeObjectURL(ed.before);ed.before=URL.createObjectURL(await new Promise(q=>r.toBlob(q,'image/jpeg',.9)));redo()};
 // ---- Modo noche: apila 8 cuadros alineados (promedio) para bajar el ruido ----
 async function night(){
  if(busy||!vid.videoWidth)return;busy=true;$('post').style.display='flex';$('pp').textContent='0%';
@@ -306,7 +310,7 @@ async function share(){const f=mkFile();
 
 function setMode(m){if(recording())return;mode=m;$('mPhoto').classList.toggle('on',m==='photo');$('mVideo').classList.toggle('on',m==='video');$('shot').classList.toggle('vid',m==='video')}
 $('mPhoto').onclick=()=>setMode('photo');$('mVideo').onclick=()=>setMode('video');
-$('shot').onclick=()=>{if(mode==='photo')ic?snap():$('nin').click();else recording()?recStop():recStart()};
+$('shot').onclick=()=>{if(mode==='photo'){ic?snap():$('nin').click()}else if(!ic&&!recording()){$('vin').click()}else{recording()?recStop():recStart()}};
 $('flip').onclick=()=>{if(recording())return;face=face==='environment'?'user':'environment';start()};
 $('discard').onclick=()=>{$('pv').pause();$('modal').style.display='none';resume()};
 $('dl').onclick=download;$('share').onclick=share;
