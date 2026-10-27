@@ -8,12 +8,12 @@
 html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);font:14px system-ui,sans-serif}
 #app{height:100%;display:flex;flex-direction:column}
 #stage{flex:1;min-height:0;position:relative}
-#view{width:100%;height:100%;object-fit:contain;display:block}
+#view{width:100%;height:100%;object-fit:cover;display:block}
 #info{position:absolute;top:8px;left:8px;background:#000a;padding:4px 8px;border-radius:6px;font-size:12px}
 #tm{position:absolute;top:8px;right:8px;background:#d22;padding:4px 8px;border-radius:6px;font-size:12px;display:none}
 #msg{position:absolute;inset:0;display:none;align-items:center;justify-content:center;text-align:center;padding:24px}
-#modes{display:flex;justify-content:center;gap:8px;padding:8px 0 0;background:var(--bg)}
-#modes button{padding:6px 16px;border-radius:20px}
+#modes{display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:6px;padding:8px 8px 0;background:var(--bg)}
+#modes button{padding:6px 12px;border-radius:20px;font-size:13px}#modes label{font-size:12px}
 #modes .on{background:var(--ac);color:#000;border:0;font-weight:600}
 #bar{display:flex;align-items:center;justify-content:space-around;padding:10px;background:var(--bg)}
 button{background:var(--pn);color:var(--fg);border:1px solid #333;border-radius:10px;padding:10px 14px;font-size:14px}
@@ -31,7 +31,7 @@ button{background:var(--pn);color:var(--fg);border:1px solid #333;border-radius:
 </style></head><body>
 <div id="app">
  <div id="stage"><canvas id="view"></canvas><div id="info">Iniciando…</div><div id="tm">● 00:00</div><div id="msg"></div></div>
- <div id="modes"><button id="mPhoto" class="on">Foto</button><button id="mVideo">Video</button><button id="nightBtn">Noche</button><button id="natBtn">Cámara HD</button><label style="align-self:center"><input type="checkbox" id="enh" checked> Postproducción</label>
+ <div id="modes"><button id="mPhoto" class="on">Foto</button><button id="mVideo">Video</button><button id="nightBtn">Noche</button><button id="natBtn">Cámara HD</button><label style="align-self:center"><input type="checkbox" id="enh"> Retoque opcional</label>
  <input id="nin" type="file" accept="image/*" capture="environment" hidden><input id="vin" type="file" accept="video/*" capture="environment" hidden></div>
  <div id="bar"><img id="thumb" alt=""><button id="shot" aria-label="Disparador"></button><button id="flip">Girar cámara</button></div>
 </div>
@@ -40,6 +40,7 @@ button{background:var(--pn);color:var(--fg);border:1px solid #333;border-radius:
  <div id="cmp"><img id="prev" alt="Después"><img id="bf" alt="Antes"><input id="cs" type="range" min="0" max="100" value="50"></div><video id="pv" controls playsinline style="display:none"></video>
  <div id="ctl" class="row" style="display:none"><select id="sty"><option value="natural">Natural</option><option value="calido">Cálido</option><option value="cine">Cine</option></select>
  <label>Exp <input type="range" id="rExp" min="-1" max="1" step=".05" value="0"></label><label>Sombras <input type="range" id="rSh" min="-.2" max=".4" step=".02" value="0"></label><label>Temp <input type="range" id="rTp" min="-.1" max=".1" step=".01" value="0"></label>
+ <label>HDR <input type="range" id="rHd" min="0" max="1" step=".05" value="0"></label><label>Ruido <input type="range" id="rNz" min="0" max="1" step=".05" value=".5"></label><label>Retrato <input type="range" id="rPt" min="0" max="1" step=".05" value="0"></label><button id="edg">Bordes</button>
  <select id="lim"><option value="0">Original</option><option value="1920">1080p</option></select><button id="rot">Girar</button><button id="rep">Informe</button></div>
  <div id="meta"></div><div id="toast"></div>
  <div class="row"><button id="discard">Cerrar</button><button id="dl">Descargar</button><button id="share" class="pri">Guardar en galería</button></div>
@@ -84,12 +85,26 @@ precision highp float;
 #else
 precision mediump float;
 #endif
-varying vec2 uv;uniform sampler2D t,h;uniform vec2 px;uniform vec3 wb;uniform float rs,ex,dn,sh,ct,sl,sa,lc,tw;
+varying vec2 uv;uniform sampler2D t,h;uniform vec2 px;uniform vec3 wb;uniform float rs,ex,dn,sh,ct,sl,sa,lc,tw,hd,pm,eg;
 float L(vec3 c){return dot(c,vec3(.2126,.7152,.0722));}
 vec3 T(float x,float y,float s){return texture2D(t,uv+vec2(x,y)*px*s).rgb;}
 float B(float r){float a=0.;for(int i=0;i<8;i++){float f=float(i)*.7854;a+=L(texture2D(t,uv+vec2(cos(f),sin(f))*r).rgb);}return a*.125;}
+vec3 tone(vec3 o,float bs){
+ o=pow(max(o,0.),vec3(2.2))*wb*ex;
+ o*=pow(clamp(.2/(bs+.03),.6,2.4),lc);
+ vec3 e0=min(o,1.),e1=min(o*3.,1.),e2=min(o*.35,1.);
+ float w0=exp(-pow(L(e0)-.5,2.)/.08)+1e-3,w1=exp(-pow(L(e1)-.5,2.)/.08)+1e-3,w2=exp(-pow(L(e2)-.5,2.)/.08)+1e-3;
+ o=mix(o,(e0*w0+e1*w1+e2*w2)/(w0+w1+w2),hd);
+ float l=max(L(o),1e-4);float x=max(l-.6,0.);
+ o*=(min(l,.6)+.4*(1.-exp(-x/.4)))/l;
+ o=pow(clamp(o,0.,1.),vec3(1./2.2));
+ o=pow(o,vec3(1.-sl*(1.-L(o))));
+ o=mix(o,o*o*(3.-2.*o),ct);
+ float v=L(o),m=max(o.r,max(o.g,o.b)),n=min(o.r,min(o.g,o.b));
+ return clamp(mix(vec3(v),o,1.+sa*(1.-(m>0.?(m-n)/m:0.))),0.,1.);}
 void main(){
  vec3 c=T(0.,0.,1.);vec3 a=c;float ws=1.;float s2=4.*dn*dn+1e-5;
+ if(eg>.5){float gx=L(T(1.,-1.,rs))+2.*L(T(1.,0.,rs))+L(T(1.,1.,rs))-L(T(-1.,-1.,rs))-2.*L(T(-1.,0.,rs))-L(T(-1.,1.,rs));float gy=L(T(-1.,1.,rs))+2.*L(T(0.,1.,rs))+L(T(1.,1.,rs))-L(T(-1.,-1.,rs))-2.*L(T(0.,-1.,rs))-L(T(1.,-1.,rs));gl_FragColor=vec4(vec3(clamp(length(vec2(gx,gy))*2.5,0.,1.)),1.);return;}
  for(int i=-2;i<=2;i++)for(int j=-2;j<=2;j++){
   if(i==0&&j==0)continue;
   vec3 q=T(float(i),float(j),1.);vec3 d=q-c;
@@ -101,16 +116,12 @@ void main(){
  vec3 g2=(T(-1.,0.,3.*rs)+T(1.,0.,3.*rs)+T(0.,-1.,3.*rs)+T(0.,1.,3.*rs))*.15+o*.4;
  float de=clamp(L(o)-L(g),-.1,.1),d2=clamp(L(o)-L(g2),-.15,.15);
  o+=de*sh*smoothstep(dn*.4,dn*1.5+.004,abs(de))+d2*.5*lc;
- o=pow(max(o,0.),vec3(2.2))*wb*ex;
  float bs=pow(max((B(.02)+B(.06))*.5,0.),2.2)*ex;
- o*=pow(clamp(.2/(bs+.03),.6,2.4),lc);
- float l=max(L(o),1e-4);float x=max(l-.6,0.);
- o*=(min(l,.6)+.4*(1.-exp(-x/.4)))/l;
- o=pow(clamp(o,0.,1.),vec3(1./2.2));
- o=pow(o,vec3(1.-sl*(1.-L(o))));
- o=mix(o,o*o*(3.-2.*o),ct);
- float v=L(o),m=max(o.r,max(o.g,o.b)),n=min(o.r,min(o.g,o.b));
- o=clamp(mix(vec3(v),o,1.+sa*(1.-(m>0.?(m-n)/m:0.))),0.,1.);
+ vec3 res=tone(o,bs);
+ if(pm>0.){float mk=smoothstep(.35,.65,texture2D(h,uv).r);vec3 bg=vec3(0.);
+  for(int i=0;i<32;i++){float f=float(i)*2.39996;float r=sqrt((float(i)+.5)/32.)*pm;bg+=texture2D(t,uv+vec2(cos(f),sin(f))*r*px).rgb;}
+  res=mix(tone(bg/32.,bs),res,mk);}
+ o=res;
  if(tw>0.){vec3 pv=texture2D(h,uv).rgb;o=mix(o,pv,tw*(1.-smoothstep(.015,.06,length(o-pv))));}
  gl_FragColor=vec4(o,1.);}`;
 class GP{ // procesador de imagen en GPU (WebGL), se reconstruye solo si el sistema pierde el contexto
@@ -123,12 +134,12 @@ class GP{ // procesador de imagen en GPU (WebGL), se reconstruye solo si el sist
   const a=g.getAttribLocation(pr,'p');g.enableVertexAttribArray(a);g.vertexAttribPointer(a,2,g.FLOAT,false,0,0);
   g.bindTexture(g.TEXTURE_2D,g.createTexture());
   [[g.TEXTURE_WRAP_S,g.CLAMP_TO_EDGE],[g.TEXTURE_WRAP_T,g.CLAMP_TO_EDGE],[g.TEXTURE_MIN_FILTER,g.LINEAR],[g.TEXTURE_MAG_FILTER,g.LINEAR]].forEach(([k,v])=>g.texParameteri(g.TEXTURE_2D,k,v));
-  this.th=null;this.U={};for(const k of['px','rs','ex','dn','sh','ct','sl','sa','lc','tw','wb','h'])this.U[k]=g.getUniformLocation(pr,k);
+  this.th=null;this.U={};for(const k of['px','rs','ex','dn','sh','ct','sl','sa','lc','tw','wb','h','hd','pm','eg'])this.U[k]=g.getUniformLocation(pr,k);
   this.max=g.getParameter(g.MAX_TEXTURE_SIZE)}
  draw(src,sw,sh,w,h,P){if(this.lost)return;const g=this.g,cv=this.cv;if(cv.width!==w||cv.height!==h){cv.width=w;cv.height=h}
   g.viewport(0,0,w,h);g.texImage2D(g.TEXTURE_2D,0,g.RGBA,g.RGBA,g.UNSIGNED_BYTE,src);
   g.uniform2f(this.U.px,1/sw,1/sh);for(const k of['rs','ex','dn','sh','ct','sl','sa'])g.uniform1f(this.U[k],P[k]);
-  g.uniform3f(this.U.wb,...(P.wb||[1,1,1]));g.uniform1f(this.U.lc,P.lc??.4);g.uniform1f(this.U.tw,P.tw||0);
+  g.uniform3f(this.U.wb,...(P.wb||[1,1,1]));g.uniform1f(this.U.lc,P.lc??.4);g.uniform1f(this.U.tw,P.tw||0);g.uniform1f(this.U.hd,P.hd||0);g.uniform1f(this.U.pm,P.pm||0);g.uniform1f(this.U.eg,P.eg||0);
   if(P.hist){g.activeTexture(g.TEXTURE1);if(!this.th){this.th=g.createTexture();g.bindTexture(g.TEXTURE_2D,this.th);
    [[g.TEXTURE_WRAP_S,g.CLAMP_TO_EDGE],[g.TEXTURE_WRAP_T,g.CLAMP_TO_EDGE],[g.TEXTURE_MIN_FILTER,g.LINEAR],[g.TEXTURE_MAG_FILTER,g.LINEAR]].forEach(([k,v])=>g.texParameteri(g.TEXTURE_2D,k,v))}else g.bindTexture(g.TEXTURE_2D,this.th);
    g.texImage2D(g.TEXTURE_2D,0,g.RGBA,g.RGBA,g.UNSIGNED_BYTE,P.hist);g.uniform1i(this.U.h,1);g.activeTexture(g.TEXTURE0)}
@@ -258,20 +269,35 @@ async function deliver(blob,type,ext,res,dur){
 
 // ---- Edición de foto: revelado automático + ajustes manuales + estilos + comparador + informe ----
 const ST={natural:{ct:0,sa:0,t:0},calido:{ct:.05,sa:.1,t:.06},cine:{ct:.18,sa:-.12,t:-.04}};
-const ed={src:null,nat:false,exp:0,sh:0,tp:0,style:'natural',lim:0,before:null};
+const ed={src:null,nat:false,exp:0,sh:0,tp:0,style:'natural',lim:0,before:null,hd:0,nz:.5,pt:0,eg:false,mask:null};
 function toCanvas(src,w,h){const c=document.createElement('canvas'),k=Math.min(1,4096/Math.max(w,h));c.width=Math.round(w*k);c.height=Math.round(h*k);c.getContext('2d').drawImage(src,0,0,c.width,c.height);return c}
-async function develop(){
+async function develop(edge){
  const c=ed.src,T=analyze(c),S=ST[ed.style];if(ed.nat){T.ex=cl(T.ex,.9,1.3);T.dn=Math.min(T.dn,.04);T.sh=Math.min(T.sh,.5);T.lc=.25}
  const k=ed.lim?Math.min(1,ed.lim/Math.max(c.width,c.height)):1,W=Math.round(c.width*k),H=Math.round(c.height*k),tp=ed.tp+S.t;
- photo.draw(c,c.width,c.height,W,H,{...T,ex:T.ex*Math.pow(2,ed.exp),sl:cl(T.sl+ed.sh,0,.6),ct:cl(T.ct+S.ct,0,.5),sa:T.sa+S.sa,wb:[T.wb[0]*(1+tp),T.wb[1],T.wb[2]*(1-tp)],rs:Math.max(1,c.width/1280)});
+ photo.draw(c,c.width,c.height,W,H,{...T,dn:T.dn*(.4+ed.nz*1.2),hd:ed.hd,pm:ed.mask?ed.pt*.02*c.width:0,eg:edge?1:0,hist:ed.mask&&ed.pt>0?ed.mask:null,ex:T.ex*Math.pow(2,ed.exp),sl:cl(T.sl+ed.sh,0,.6),ct:cl(T.ct+S.ct,0,.5),sa:T.sa+S.sa,wb:[T.wb[0]*(1+tp),T.wb[1],T.wb[2]*(1-tp)],rs:Math.max(1,c.width/1280)});
  const blob=await new Promise(r=>photo.cv.toBlob(r,'image/jpeg',.95));photo.cv.width=photo.cv.height=1;if(!blob)throw new Error('No se pudo procesar');
  return{blob,meta:`${W}×${H} px · ${(blob.size/1048576).toFixed(1)} MB · ${ed.style}`}}
 async function showPhoto(c,nat){
- Object.assign(ed,{src:c,nat,exp:0,sh:0,tp:0,style:'natural',lim:0});['rExp','rSh','rTp'].forEach(i=>$(i).value=0);$('sty').value='natural';$('lim').value='0';
+ Object.assign(ed,{src:c,nat,exp:0,sh:0,tp:0,style:'natural',lim:0,hd:0,nz:.5,pt:0,eg:false,mask:null});['rExp','rSh','rTp','rHd','rPt'].forEach(i=>$(i).value=0);$('rNz').value=.5;$('edg').classList.remove('pri');$('sty').value='natural';$('lim').value='0';
  ed.before&&URL.revokeObjectURL(ed.before);ed.before=URL.createObjectURL(await new Promise(r=>c.toBlob(r,'image/jpeg',.9)));
  const r=await develop();setCur(r.blob,'image/jpeg','jpg',r.meta,ed.before,true);$('thumb').src=cur.url}
-let rt;const redo=()=>{clearTimeout(rt);rt=setTimeout(async()=>{try{const r=await develop();setCur(r.blob,'image/jpeg','jpg',r.meta,ed.before,true)}catch(e){}},150)};
-['sty','rExp','rSh','rTp','lim'].forEach(i=>$(i).oninput=()=>{ed.style=$('sty').value;ed.exp=+$('rExp').value;ed.sh=+$('rSh').value;ed.tp=+$('rTp').value;ed.lim=+$('lim').value;redo()});
+let rt;const redo=()=>{clearTimeout(rt);rt=setTimeout(async()=>{try{const r=await develop(ed.eg);
+  if(ed.eg){$('prev').src=URL.createObjectURL(r.blob);$('bf').style.display='none'}else{$('bf').style.display='';setCur(r.blob,'image/jpeg','jpg',r.meta,ed.before,true)}}catch(e){}},150)};
+['sty','rExp','rSh','rTp','rHd','rNz','rPt','lim'].forEach(i=>$(i).oninput=async()=>{ed.style=$('sty').value;ed.exp=+$('rExp').value;ed.sh=+$('rSh').value;ed.tp=+$('rTp').value;ed.hd=+$('rHd').value;ed.nz=+$('rNz').value;ed.pt=+$('rPt').value;ed.lim=+$('lim').value;
+ if(ed.pt>0&&!ed.mask){$('toast').textContent='Detectando al sujeto (IA)…';if(!await ensureMask()){$('toast').textContent='No se pudo cargar la IA de retrato (requiere internet)';$('rPt').value=0;ed.pt=0}else $('toast').textContent=''}
+ redo()});
+$('edg').onclick=()=>{ed.eg=!ed.eg;$('edg').classList.toggle('pri',ed.eg);redo()};
+// Retrato: segmentación de persona con MediaPipe (IA en el navegador); el fondo se desenfoca en el shader
+async function ensureMask(){
+ if(ed.mask)return true;
+ try{const U='https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation@0.1.1675465747/';
+  if(!window.SelfieSegmentation)await new Promise((ok,no)=>{const e=document.createElement('script');e.src=U+'selfie_segmentation.js';e.onload=ok;e.onerror=no;document.head.appendChild(e)});
+  const sg=window._sg||(window._sg=new SelfieSegmentation({locateFile:f=>U+f}));sg.setOptions({modelSelection:0});
+  const k=768/Math.max(ed.src.width,ed.src.height),c=document.createElement('canvas');c.width=Math.round(ed.src.width*k);c.height=Math.round(ed.src.height*k);c.getContext('2d').drawImage(ed.src,0,0,c.width,c.height);
+  const m=await new Promise((ok,no)=>{sg.onResults(r=>{const o=document.createElement('canvas');o.width=r.segmentationMask.width;o.height=r.segmentationMask.height;const x=o.getContext('2d',{willReadFrequently:true});x.drawImage(r.segmentationMask,0,0);
+   const im=x.getImageData(0,0,o.width,o.height),d=im.data;let mn=255;for(let i=3;i<d.length;i+=4)mn=Math.min(mn,d[i]);
+   for(let i=0;i<d.length;i+=4){const v=mn<250?d[i+3]:d[i];d[i]=v;d[i+1]=v;d[i+2]=v;d[i+3]=255}x.putImageData(im,0,0);ok(o)});sg.send({image:c}).catch(no)});
+  ed.mask=m;return true}catch(e){return false}}
 $('cs').oninput=e=>{$('bf').style.clipPath=`inset(0 ${100-e.target.value}% 0 0)`};
 function qm(src){const sw=src.width||src.naturalWidth,sh=src.height||src.naturalHeight,k=512/Math.max(sw,sh),w=Math.round(sw*k),h=Math.round(sh*k),c=document.createElement('canvas');c.width=w;c.height=h;
  const x=c.getContext('2d',{willReadFrequently:true});x.drawImage(src,0,0,w,h);const d=x.getImageData(0,0,w,h).data,Y=new Float32Array(w*h);let m=0,v=0;
@@ -281,7 +307,7 @@ function qm(src){const sw=src.width||src.naturalWidth,sh=src.height||src.natural
 $('rep').onclick=async()=>{const a=qm(ed.src),b=qm(await createImageBitmap(cur.blob));
  $('toast').textContent=`Antes→Después · Brillo ${a.br}%→${b.br}% · Nitidez ${a.sh}→${b.sh} · Ruido est. ${a.nz}→${b.nz}`};
 $('rot').onclick=async()=>{const c=ed.src,r=document.createElement('canvas');r.width=c.height;r.height=c.width;const x=r.getContext('2d');x.translate(r.width,0);x.rotate(Math.PI/2);x.drawImage(c,0,0);
- ed.src=r;ed.before&&URL.revokeObjectURL(ed.before);ed.before=URL.createObjectURL(await new Promise(q=>r.toBlob(q,'image/jpeg',.9)));redo()};
+ ed.src=r;ed.mask=null;ed.before&&URL.revokeObjectURL(ed.before);ed.before=URL.createObjectURL(await new Promise(q=>r.toBlob(q,'image/jpeg',.9)));redo()};
 // ---- Modo noche: apila 8 cuadros alineados (promedio) para bajar el ruido ----
 async function night(){
  if(busy||!vid.videoWidth)return;busy=true;$('post').style.display='flex';$('pp').textContent='0%';
@@ -327,5 +353,6 @@ $('nin').onchange=async e=>{const f=e.target.files[0];e.target.value='';if(!f)re
  resume()};
 $('vin').onchange=e=>{const f=e.target.files[0];e.target.value='';if(!f)return;
  deliver(f,f.type||'video/quicktime',(f.name.split('.').pop()||'mov').toLowerCase(),'cámara',0);resume()};
+if(!window.ImageCapture)$('nightBtn').style.display='none'; // en iPhone el video en vivo da peor calidad: se usa la cámara nativa
 start();loop();
 </script></body></html>
